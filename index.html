@@ -7,7 +7,8 @@
   <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; }
-    #plot { width: 100%; max-width: 900px; height: 600px; }
+    /* 축 비율 1:1 고정이므로, plot 영역도 정사각에 가깝게 주는 편이 보기 좋음 */
+    #plot { width: 100%; max-width: 900px; height: 900px; }
     label { margin-right: 20px; }
   </style>
 </head>
@@ -25,8 +26,6 @@ Threshold:
 <input type="range" id="thr" min="0" max="1" step="0.01" value="0.50">
 <span id="thrVal">0.50</span>
 </label>
-
-<p id="info"></p>
 
 <div id="plot"></div>
 
@@ -50,12 +49,17 @@ files.forEach(f => {
 
 async function loadCSV(name) {
   const r = await fetch(`data/${name}.csv`);
+  if (!r.ok) throw new Error(`Cannot load data/${name}.csv`);
   const text = await r.text();
+
   const rows = text.trim().split(/\r?\n/);
   const head = rows[0].split(",");
   const ix = head.indexOf("x_cm");
   const iy = head.indexOf("y_cm");
   const id = head.indexOf("damage");
+  if (ix < 0 || iy < 0 || id < 0) {
+    throw new Error("CSV must have columns: x_cm,y_cm,damage");
+  }
 
   const data = rows.slice(1).map(r => r.split(",").map(Number));
   const xs = [...new Set(data.map(r => r[ix]))].sort((a,b)=>a-b);
@@ -63,7 +67,10 @@ async function loadCSV(name) {
 
   const z = ys.map(() => xs.map(() => null));
   data.forEach(r => {
-    z[ys.indexOf(r[iy])][xs.indexOf(r[ix])] = r[id];
+    const x = r[ix], y = r[iy], d = r[id];
+    if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(d)) {
+      z[ys.indexOf(y)][xs.indexOf(x)] = d;
+    }
   });
 
   return {xs, ys, z};
@@ -77,8 +84,10 @@ function mask(z, t) {
 
 async function draw() {
   thrVal.textContent = Number(thr.value).toFixed(2);
+
   const {xs, ys, z} = await loadCSV(chargeSel.value);
-  const m = mask(z, Number(thr.value));
+  const t = Number(thr.value);
+  const m = mask(z, t);
 
   Plotly.newPlot(plotDiv, [
     // base damage map: 0 white, 1 black
@@ -95,7 +104,8 @@ async function draw() {
       zmax: 1,
       colorbar: { title: "Damage" }
     },
-    // overlay: threshold exceed = red, otherwise transparent
+    // overlay: threshold exceed = red
+    // z-range 고정으로 threshold가 커질수록 정상적으로 사라지게 함
     {
       type: "heatmap",
       x: xs,
@@ -111,15 +121,19 @@ async function draw() {
     }
   ], {
     xaxis: { title: "X-coordinate (cm)" },
-    // ✅ y increases upward (no reversed)
-    yaxis: { title: "Y-coordinate (cm)" },
+    yaxis: {
+      title: "Y-coordinate (cm)",
+      // ✅ x,y 둘 다 cm이므로 1:1 스케일 유지
+      scaleanchor: "x",
+      scaleratio: 1
+    },
     margin: { l: 80, r: 20, t: 20, b: 60 }
-  });
+  }, {responsive: true});
 }
 
-chargeSel.onchange = draw;
-thr.oninput = draw;
-draw();
+chargeSel.onchange = () => draw().catch(e => console.error(e));
+thr.oninput = () => draw().catch(e => console.error(e));
+draw().catch(e => console.error(e));
 </script>
 
 </body>
