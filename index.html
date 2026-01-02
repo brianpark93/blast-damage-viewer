@@ -84,25 +84,33 @@ async function draw() {
   Plotly.newPlot(plotDiv, [
     {
       type: "heatmap",
-      x: xs, y: ys, z: z,
-      colorscale: "Greys",
-      zmin: 0, zmax: 1,
-      colorbar: {title: "Damage"}
+      x: xs,
+      y: ys,
+      z: z,
+      colorscale: [
+        [0.0, "rgb(255,255,255)"],
+        [1.0, "rgb(0,0,0)"]
+      ],
+      zmin: 0,
+      zmax: 1,
+      colorbar: { title: "Damage" }
     },
     {
       type: "heatmap",
-      x: xs, y: ys, z: m,
+      x: xs,
+      y: ys,
+      z: m,
       showscale: false,
       colorscale: [
-        [0,"rgba(0,0,0,0)"],
-        [0.5,"rgba(255,0,0,0.5)"],
-        [1,"rgba(255,0,0,0.5)"]
+        [0, "rgba(0,0,0,0)"],
+        [0.5, "rgba(255,0,0,0.5)"],
+        [1, "rgba(255,0,0,0.5)"]
       ]
     }
   ], {
-    xaxis: {title: "X-coordinate (cm)"},
-    yaxis: {title: "Y-coordinate (cm)", autorange: "reversed"},
-    margin: {l:80,r:20,t:20,b:60}
+    xaxis: { title: "X-coordinate (cm)" },
+    yaxis: { title: "Y-coordinate (cm)", autorange: "reversed" },
+    margin: { l: 80, r: 20, t: 20, b: 60 }
   });
 }
 
