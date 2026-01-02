@@ -7,7 +7,7 @@
   <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; }
-    /* 축 비율 1:1 고정이므로, plot 영역도 정사각에 가깝게 주는 편이 보기 좋음 */
+    /* 1:1 스케일 고정이라 정사각에 가깝게 주는 편이 보기 좋음 */
     #plot { width: 100%; max-width: 900px; height: 900px; }
     label { margin-right: 20px; }
   </style>
@@ -34,6 +34,10 @@ const chargeSel = document.getElementById("charge");
 const thr = document.getElementById("thr");
 const thrVal = document.getElementById("thrVal");
 const plotDiv = document.getElementById("plot");
+
+// ✅ 표시할 축 범위 (cm)
+const X_RANGE = [0, 45];
+const Y_RANGE = [10, 100];
 
 const files = [
   "m0p1","m0p2","m0p3","m0p4","m0p5",
@@ -105,7 +109,6 @@ async function draw() {
       colorbar: { title: "Damage" }
     },
     // overlay: threshold exceed = red
-    // z-range 고정으로 threshold가 커질수록 정상적으로 사라지게 함
     {
       type: "heatmap",
       x: xs,
@@ -120,10 +123,14 @@ async function draw() {
       ]
     }
   ], {
-    xaxis: { title: "X-coordinate (cm)" },
+    xaxis: {
+      title: "X-coordinate (cm)",
+      range: X_RANGE,
+      constrain: "domain"
+    },
     yaxis: {
       title: "Y-coordinate (cm)",
-      // ✅ x,y 둘 다 cm이므로 1:1 스케일 유지
+      range: Y_RANGE,
       scaleanchor: "x",
       scaleratio: 1
     },
