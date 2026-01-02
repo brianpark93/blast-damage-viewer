@@ -7,7 +7,6 @@
   <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; }
-    /* 축 비율 1:1 고정이므로, plot 영역도 정사각에 가깝게 주는 편이 보기 좋음 */
     #plot { width: 100%; max-width: 900px; height: 900px; }
     label { margin-right: 20px; }
   </style>
@@ -35,6 +34,11 @@ const thr = document.getElementById("thr");
 const thrVal = document.getElementById("thrVal");
 const plotDiv = document.getElementById("plot");
 
+// ===== 축 범위 (cm) =====
+const X_RANGE = [0, 45];
+const Y_RANGE = [10, 100];
+
+// ===== 사용 가능한 파일 =====
 const files = [
   "m0p1","m0p2","m0p3","m0p4","m0p5",
   "m0p6","m0p7","m0p8","m0p9","m1p0"
@@ -57,9 +61,6 @@ async function loadCSV(name) {
   const ix = head.indexOf("x_cm");
   const iy = head.indexOf("y_cm");
   const id = head.indexOf("damage");
-  if (ix < 0 || iy < 0 || id < 0) {
-    throw new Error("CSV must have columns: x_cm,y_cm,damage");
-  }
 
   const data = rows.slice(1).map(r => r.split(",").map(Number));
   const xs = [...new Set(data.map(r => r[ix]))].sort((a,b)=>a-b);
@@ -90,7 +91,7 @@ async function draw() {
   const m = mask(z, t);
 
   Plotly.newPlot(plotDiv, [
-    // base damage map: 0 white, 1 black
+    // ===== Base damage map =====
     {
       type: "heatmap",
       x: xs,
@@ -104,8 +105,7 @@ async function draw() {
       zmax: 1,
       colorbar: { title: "Damage" }
     },
-    // overlay: threshold exceed = red
-    // z-range 고정으로 threshold가 커질수록 정상적으로 사라지게 함
+    // ===== Threshold overlay =====
     {
       type: "heatmap",
       x: xs,
@@ -125,19 +125,24 @@ async function draw() {
       range: X_RANGE,
       tickmode: "linear",
       tick0: 0,
-      dtick: 5,            // ✅ 5 cm 간격
-      constrain: "domain"
+      dtick: 5,
+      constrain: "domain",
+      showgrid: true,
+      gridcolor: "rgba(0,0,0,0.15)"
     },
     yaxis: {
       title: "Y-coordinate (cm)",
       range: Y_RANGE,
       tickmode: "linear",
       tick0: 10,
-      dtick: 10,           // ✅ 10 cm 간격
+      dtick: 10,
       scaleanchor: "x",
-      scaleratio: 1
+      scaleratio: 1,
+      showgrid: true,
+      gridcolor: "rgba(0,0,0,0.15)"
     },
-
+    margin: { l: 80, r: 20, t: 20, b: 60 }
+  }, {responsive: true});
 }
 
 chargeSel.onchange = () => draw().catch(e => console.error(e));
