@@ -195,7 +195,9 @@ async function draw() {
       ],
       zmin: 0,
       zmax: 1,
-      colorbar: { title: "Damage" }
+      colorbar: { title: "Damage" },
+
+      hovertemplate: "x = %{x} cm<br>y = %{y} cm<extra></extra>"
     },
     // overlay: threshold exceed = red
     {
@@ -209,7 +211,10 @@ async function draw() {
       colorscale: [
         [0.0, "rgba(0,0,0,0)"],
         [1.0, "rgba(255,0,0,0.55)"]
-      ]
+      ],
+
+      // ✅ overlay도 동일하게
+      hovertemplate: "x = %{x} cm<br>y = %{y} cm<extra></extra>"
     }
   ], {
     xaxis: {
