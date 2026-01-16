@@ -66,6 +66,7 @@
   <div id="preview">
     <div id="previewTitle">Hover a grid cell to preview</div>
     <img id="previewImg" alt="snapshot preview" />
+    <div id="previewMeta"></div>
   </div>
 </div>
 
@@ -182,7 +183,7 @@ async function draw() {
   const m = mask(z, t);
 
   await Plotly.newPlot(plotDiv, [
-    // base damage map
+    // base damage map (hover에서 d=average damage 표시)
     {
       type: "heatmap",
       x: xs,
@@ -196,9 +197,13 @@ async function draw() {
       zmax: 1,
       colorbar: { title: "Damage" },
 
-      hovertemplate: "x = %{x} cm<br>y = %{y} cm<extra></extra>"
+      // ✅ x, y, d(=z) 표시
+      hovertemplate:
+        "x = %{x} cm<br>" +
+        "y = %{y} cm<br>" +
+        "d = %{z:.4f}<extra></extra>"
     },
-    // overlay: threshold exceed = red
+    // overlay: threshold exceed = red (exceed 여부만 표시)
     {
       type: "heatmap",
       x: xs,
@@ -212,8 +217,11 @@ async function draw() {
         [1.0, "rgba(255,0,0,0.55)"]
       ],
 
-      // ✅ overlay도 동일하게
-      hovertemplate: "x = %{x} cm<br>y = %{y} cm<extra></extra>"
+      // ✅ overlay는 exceed만 표시 (0/1)
+      hovertemplate:
+        "x = %{x} cm<br>" +
+        "y = %{y} cm<br>" +
+        "exceed = %{z:d}<extra></extra>"
     }
   ], {
     xaxis: {
