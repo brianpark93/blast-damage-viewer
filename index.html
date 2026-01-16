@@ -7,26 +7,68 @@
   <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; }
-    #plot { width: 100%; max-width: 900px; height: 900px; }
+
+    #controls { margin-bottom: 12px; }
     label { margin-right: 20px; }
+
+    #wrap {
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+    }
+
+    #plot { width: 900px; height: 900px; }
+
+    #preview {
+      width: 420px;
+      position: sticky;
+      top: 20px;
+    }
+
+    #previewTitle { font-weight: 700; margin-bottom: 10px; }
+
+    #previewImg {
+      width: 100%;
+      height: auto;
+      border: 1px solid rgba(0,0,0,0.2);
+      background: #f7f7f7;
+    }
+
+    #previewMeta {
+      margin-top: 10px;
+      font-size: 13px;
+      color: #333;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
   </style>
 </head>
 <body>
 
 <h2>Spatially Averaged Blast Damage Map</h2>
 
-<label>
-TNT charge:
-<select id="charge"></select>
-</label>
+<div id="controls">
+  <label>
+    TNT charge:
+    <select id="charge"></select>
+  </label>
 
-<label>
-Threshold:
-<input type="range" id="thr" min="0" max="1" step="0.01" value="0.50">
-<span id="thrVal">0.50</span>
-</label>
+  <label>
+    Threshold:
+    <input type="range" id="thr" min="0" max="1" step="0.01" value="0.50">
+    <span id="thrVal">0.50</span>
+  </label>
+</div>
 
-<div id="plot"></div>
+<div id="wrap">
+  <div id="plot"></div>
+
+  <div id="preview">
+    <div id="previewTitle">Hover a grid cell to preview</div>
+    <img id="previewImg" alt="snapshot preview" />
+    <div id="previewMeta"></div>
+  </div>
+</div>
 
 <script>
 const chargeSel = document.getElementById("charge");
@@ -34,15 +76,20 @@ const thr = document.getElementById("thr");
 const thrVal = document.getElementById("thrVal");
 const plotDiv = document.getElementById("plot");
 
+const previewImg  = document.getElementById("previewImg");
+const previewMeta = document.getElementById("previewMeta");
+
 // ✅ 축 범위 (cm): 요청대로 고정
 const X_RANGE = [-5, 50];
 const Y_RANGE = [5, 105];
 
-const files = [
-  "m0p1","m0p2","m0p3","m0p4","m0p5",
-  "m0p6","m0p7","m0p8","m0p9","m1p0"
-];
+// 스냅샷 폴더 (index.html 기준 상대경로)
+const SNAP_DIR = "failure_snapshot_all/processed_damage_snapshots";
 
+// charges 목록 (파이썬에서 자동 생성)
+const files = ["m0p1", "m0p2", "m0p3", "m0p4", "m0p5", "m0p6", "m0p7", "m0p8", "m0p9", "m1p0"];
+
+// populate dropdown
 files.forEach(f => {
   const opt = document.createElement("option");
   opt.value = f;
@@ -72,7 +119,9 @@ async function loadCSV(name) {
   data.forEach(r => {
     const x = r[ix], y = r[iy], d = r[id];
     if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(d)) {
-      z[ys.indexOf(y)][xs.indexOf(x)] = d;
+      const yi2 = ys.indexOf(y);
+      const xi2 = xs.indexOf(x);
+      if (yi2 >= 0 && xi2 >= 0) z[yi2][xi2] = d;
     }
   });
 
@@ -85,15 +134,56 @@ function mask(z, t) {
   );
 }
 
+function pad3(n) {
+  const s = String(n);
+  return s.length >= 3 ? s : ("000" + s).slice(-3);
+}
+
+function buildSnapshotPath(chargeTag, x_cm, y_cm) {
+  const xi = Math.round(Number(x_cm));
+  const yi = Math.round(Number(y_cm));
+
+  // 방어: 음수면 파일 없을 확률 높음
+  if (!Number.isFinite(xi) || !Number.isFinite(yi) || xi < 0 || yi < 0) return null;
+
+  const xTag = pad3(xi);
+  const yTag = pad3(yi);
+
+  return `${SNAP_DIR}/damage_snapshot_${chargeTag}_x${xTag}_y${yTag}.png`;
+}
+
+function setPreview(chargeTag, x_cm, y_cm) {
+  const p = buildSnapshotPath(chargeTag, x_cm, y_cm);
+  if (!p) {
+    previewImg.removeAttribute("src");
+    previewMeta.textContent = `No preview (invalid coord): m=${chargeTag}, x=${x_cm}, y=${y_cm}`;
+    return;
+  }
+
+  // 캐시 방지용 쿼리스트링
+  previewImg.src = `${p}?v=${Date.now()}`;
+  previewMeta.textContent =
+    `m=${chargeTag}\n` +
+    `x=${Number(x_cm).toFixed(1)} cm, y=${Number(y_cm).toFixed(1)} cm\n` +
+    `${p}`;
+}
+
+previewImg.onerror = () => {
+  const txt = previewMeta.textContent || "";
+  previewMeta.textContent = txt + "\n(Preview image not found)";
+  previewImg.removeAttribute("src");
+};
+
 async function draw() {
   thrVal.textContent = Number(thr.value).toFixed(2);
 
-  const {xs, ys, z} = await loadCSV(chargeSel.value);
+  const charge = chargeSel.value;
+  const {xs, ys, z} = await loadCSV(charge);
   const t = Number(thr.value);
   const m = mask(z, t);
 
-  Plotly.newPlot(plotDiv, [
-    // base damage map: 0 white, 1 black
+  await Plotly.newPlot(plotDiv, [
+    // base damage map
     {
       type: "heatmap",
       x: xs,
@@ -144,10 +234,29 @@ async function draw() {
     },
     margin: { l: 80, r: 20, t: 20, b: 60 }
   }, {responsive: true});
+
+  // hover 이벤트: 새로 그릴 때마다 안전하게 리스너 초기화
+  if (typeof plotDiv.removeAllListeners === "function") {
+    plotDiv.removeAllListeners("plotly_hover");
+    plotDiv.removeAllListeners("plotly_unhover");
+  }
+
+  plotDiv.on("plotly_hover", (ev) => {
+    if (!ev || !ev.points || ev.points.length === 0) return;
+    const pt = ev.points[0];
+    // pt.x, pt.y 가 xs, ys의 값
+    setPreview(chargeSel.value, pt.x, pt.y);
+  });
+
+  // unhover 시에는 마지막 프리뷰 유지 (원하면 여기서 지우는 로직 넣으면 됨)
+  plotDiv.on("plotly_unhover", () => {});
 }
 
 chargeSel.onchange = () => draw().catch(e => console.error(e));
 thr.oninput = () => draw().catch(e => console.error(e));
+
+// 초기 선택값 지정
+chargeSel.value = files[0] || "";
 draw().catch(e => console.error(e));
 </script>
 
