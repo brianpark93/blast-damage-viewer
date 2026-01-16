@@ -79,7 +79,7 @@ const plotDiv = document.getElementById("plot");
 const previewImg  = document.getElementById("previewImg");
 const previewMeta = document.getElementById("previewMeta");
 
-// ✅ 축 범위 (cm): 요청대로 고정
+// 축 범위 (cm)
 const X_RANGE = [-5, 50];
 const Y_RANGE = [5, 105];
 
@@ -143,7 +143,6 @@ function buildSnapshotPath(chargeTag, x_cm, y_cm) {
   const xi = Math.round(Number(x_cm));
   const yi = Math.round(Number(y_cm));
 
-  // 방어: 음수면 파일 없을 확률 높음
   if (!Number.isFinite(xi) || !Number.isFinite(yi) || xi < 0 || yi < 0) return null;
 
   const xTag = pad3(xi);
@@ -160,7 +159,6 @@ function setPreview(chargeTag, x_cm, y_cm) {
     return;
   }
 
-  // 캐시 방지용 쿼리스트링
   previewImg.src = `${p}?v=${Date.now()}`;
   previewMeta.textContent =
     `m=${chargeTag}\n` +
@@ -183,7 +181,7 @@ async function draw() {
   const m = mask(z, t);
 
   await Plotly.newPlot(plotDiv, [
-    // base damage map (hover에서 d=average damage 표시)
+    // base damage map (hover에서 d 표시)
     {
       type: "heatmap",
       x: xs,
@@ -196,19 +194,18 @@ async function draw() {
       zmin: 0,
       zmax: 1,
       colorbar: { title: "Damage" },
-
-      // ✅ x, y, d(=z) 표시
       hovertemplate:
         "x = %{x} cm<br>" +
         "y = %{y} cm<br>" +
         "d = %{z:.4f}<extra></extra>"
     },
-    // overlay: threshold exceed = red (exceed 여부만 표시)
+    // overlay: threshold exceed = red, hover에서도 d 표시 (customdata 사용)
     {
       type: "heatmap",
       x: xs,
       y: ys,
       z: m,
+      customdata: z,   // ⭐ 실제 damage 값 전달
       showscale: false,
       zmin: 0,
       zmax: 1,
@@ -216,12 +213,10 @@ async function draw() {
         [0.0, "rgba(0,0,0,0)"],
         [1.0, "rgba(255,0,0,0.55)"]
       ],
-
-      // ✅ overlay는 exceed만 표시 (0/1)
       hovertemplate:
         "x = %{x} cm<br>" +
         "y = %{y} cm<br>" +
-        "exceed = %{z:d}<extra></extra>"
+        "d = %{customdata:.4f}<extra></extra>"
     }
   ], {
     xaxis: {
@@ -247,7 +242,6 @@ async function draw() {
     margin: { l: 80, r: 20, t: 20, b: 60 }
   }, {responsive: true});
 
-  // hover 이벤트: 새로 그릴 때마다 안전하게 리스너 초기화
   if (typeof plotDiv.removeAllListeners === "function") {
     plotDiv.removeAllListeners("plotly_hover");
     plotDiv.removeAllListeners("plotly_unhover");
@@ -256,18 +250,15 @@ async function draw() {
   plotDiv.on("plotly_hover", (ev) => {
     if (!ev || !ev.points || ev.points.length === 0) return;
     const pt = ev.points[0];
-    // pt.x, pt.y 가 xs, ys의 값
     setPreview(chargeSel.value, pt.x, pt.y);
   });
 
-  // unhover 시에는 마지막 프리뷰 유지 (원하면 여기서 지우는 로직 넣으면 됨)
   plotDiv.on("plotly_unhover", () => {});
 }
 
 chargeSel.onchange = () => draw().catch(e => console.error(e));
 thr.oninput = () => draw().catch(e => console.error(e));
 
-// 초기 선택값 지정
 chargeSel.value = files[0] || "";
 draw().catch(e => console.error(e));
 </script>
