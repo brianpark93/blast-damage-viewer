@@ -311,8 +311,7 @@ function updateStructureSummary(geometry, payload, area, threshold) {
   areaSummary.textContent =
     `Current blast case: m=${payload.charge}, x=${Number(payload.x_cm).toFixed(1)} cm, y=${Number(payload.y_cm).toFixed(1)} cm\n` +
     `Full structural mean damage: ${Number.isFinite(payload.exported_mean_damage) ? Number(payload.exported_mean_damage).toFixed(4) : (Number.isFinite(fullSummary.mean) ? fullSummary.mean.toFixed(4) : "N/A")}\n` +
-    `Full damage >= ${threshold.toFixed(2)}: ${fullSummary.exceed}/${fullValues.length} (${Number.isFinite(fullSummary.exceedPercent) ? fullSummary.exceedPercent.toFixed(1) : "N/A"}%)\n` +
-    `Eroded elements corrected to d=1.0: ${payload.failed_elements}\n\n` +
+    `Full damage >= ${threshold.toFixed(2)}: ${fullSummary.exceed}/${fullValues.length} (${Number.isFinite(fullSummary.exceedPercent) ? fullSummary.exceedPercent.toFixed(1) : "N/A"}%)\n\n` +
     selectedText;
   clearAreaBtn.disabled = !area;
 }
@@ -353,6 +352,8 @@ async function showStructureCase(chargeTag, xCm, yCm) {
         range: [-4, 0],
         showgrid: true,
         gridcolor: "rgba(0,0,0,0.12)",
+        tickmode: "array",
+        tickvals: [-4, -2, 0],
         fixedrange: true,
         scaleanchor: "x",
         scaleratio: 1,
