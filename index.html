@@ -10,12 +10,13 @@
     #controls { margin-bottom: 12px; }
     label { margin-right: 20px; }
     button { margin-left: 8px; }
-    #wrap { width: 900px; max-width: 100%; }
-    #plot { width: 900px; max-width: 100%; height: 900px; }
-    #preview { margin-top: 14px; }
+    #wrap { display: flex; gap: 20px; align-items: flex-start; }
+    #plot { width: 900px; height: 900px; flex: 0 0 auto; }
+    #sidePanel { width: 900px; max-width: calc(100vw - 960px); min-width: 520px; position: sticky; top: 20px; }
+    #preview { margin-top: 0; }
     #previewTitle { font-weight: 700; margin-bottom: 10px; }
     #previewImg {
-      width: 420px;
+      width: 100%;
       max-width: 100%;
       height: auto;
       border: 1px solid rgba(0,0,0,0.2);
@@ -29,7 +30,7 @@
       word-break: break-all;
     }
     #areaPanel {
-      margin-top: 18px;
+      margin-top: 16px;
       padding: 12px;
       border: 1px solid rgba(0,0,0,0.18);
       background: #f7f7f7;
@@ -39,10 +40,15 @@
     #areaSummary { margin-top: 8px; white-space: pre-line; }
     #structurePlot {
       width: 100%;
-      height: 190px;
+      height: 150px;
       margin-top: 10px;
       border: 1px solid rgba(0,0,0,0.14);
       background: #fff;
+    }
+    @media (max-width: 1500px) {
+      #wrap { display: block; }
+      #plot { max-width: 100%; }
+      #sidePanel { width: 900px; max-width: 100%; min-width: 0; position: static; margin-top: 16px; }
     }
   </style>
 </head>
@@ -68,17 +74,19 @@
 <div id="wrap">
   <div id="plot"></div>
 
-  <div id="areaPanel">
-    <strong>Structural damage map / area of interest</strong>
-    <div id="areaHelp">Hover or click a detonation-location cell above, then draw a rectangle on the structural damage map below.</div>
-    <div id="structurePlot"></div>
-    <div id="areaSummary">No structural case loaded.</div>
-  </div>
+  <div id="sidePanel">
+    <div id="preview">
+      <div id="previewTitle">Selected structural snapshot preview</div>
+      <img id="previewImg" alt="snapshot preview" />
+      <div id="previewMeta"></div>
+    </div>
 
-  <div id="preview">
-    <div id="previewTitle">Selected structural snapshot preview</div>
-    <img id="previewImg" alt="snapshot preview" />
-    <div id="previewMeta"></div>
+    <div id="areaPanel">
+      <strong>Structural damage map / area of interest</strong>
+      <div id="areaHelp">Hover or click a detonation-location cell on the left, then draw a rectangle on the structural damage map below.</div>
+      <div id="structurePlot"></div>
+      <div id="areaSummary">No structural case loaded.</div>
+    </div>
   </div>
 </div>
 
@@ -312,9 +320,12 @@ async function showStructureCase(chargeTag, xCm, yCm) {
         range: [-4, 0],
         showgrid: true,
         gridcolor: "rgba(0,0,0,0.12)",
-        fixedrange: true
+        fixedrange: true,
+        scaleanchor: "x",
+        scaleratio: 1,
+        constrain: "domain"
       },
-      margin: {l: 58, r: 12, t: 8, b: 48},
+      margin: {l: 58, r: 70, t: 8, b: 42},
       dragmode: "drawrect",
       newshape: {line: {color: "#0072B2", width: 2}, fillcolor: "rgba(0,114,178,0.10)"},
       shapes: selectedStructureArea ? [{
