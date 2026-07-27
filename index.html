@@ -12,10 +12,11 @@
     button { margin-left: 8px; }
     #wrap { display: flex; gap: 20px; align-items: flex-start; }
     #plot { width: 900px; height: 900px; }
-    #preview { width: 520px; position: sticky; top: 20px; }
+    #preview { width: 900px; position: sticky; top: 20px; }
     #previewTitle { font-weight: 700; margin-bottom: 10px; }
     #previewImg {
-      width: 100%;
+      width: 420px;
+      max-width: 100%;
       height: auto;
       border: 1px solid rgba(0,0,0,0.2);
       background: #f7f7f7;
@@ -37,8 +38,9 @@
     #areaHelp, #areaSummary { font-size: 13px; line-height: 1.45; }
     #areaSummary { margin-top: 8px; white-space: pre-line; }
     #structurePlot {
-      width: 100%;
-      height: 280px;
+      width: 900px;
+      max-width: 100%;
+      height: 140px;
       margin-top: 10px;
       border: 1px solid rgba(0,0,0,0.14);
       background: #fff;
@@ -295,9 +297,24 @@ async function showStructureCase(chargeTag, xCm, yCm) {
         "depth z = %{y:.2f} cm<br>" +
         "d = %{z:.4f}<extra></extra>"
     }], {
-      xaxis: {title: "Structural position y (cm)", range: [-55, 55], showgrid: true, gridcolor: "rgba(0,0,0,0.12)"},
-      yaxis: {title: "Depth z (cm)", range: [-4, 0], showgrid: true, gridcolor: "rgba(0,0,0,0.12)"},
-      margin: {l: 58, r: 12, t: 8, b: 48},
+      xaxis: {
+        title: "Structural position y (cm)",
+        range: [-55, 55],
+        fixedrange: true,
+        showgrid: true,
+        gridcolor: "rgba(0,0,0,0.12)"
+      },
+      yaxis: {
+        title: "Depth z (cm)",
+        range: [-4, 0],
+        fixedrange: true,
+        scaleanchor: "x",
+        scaleratio: 1,
+        constrain: "domain",
+        showgrid: true,
+        gridcolor: "rgba(0,0,0,0.12)"
+      },
+      margin: {l: 58, r: 12, t: 8, b: 36},
       dragmode: "drawrect",
       newshape: {line: {color: "#0072B2", width: 2}, fillcolor: "rgba(0,114,178,0.10)"},
       shapes: selectedStructureArea ? [{
@@ -311,7 +328,12 @@ async function showStructureCase(chargeTag, xCm, yCm) {
         line: {color: "#0072B2", width: 2},
         fillcolor: "rgba(0,114,178,0.10)"
       }] : []
-    }, {responsive: true});
+    }, {
+      responsive: true,
+      scrollZoom: false,
+      displaylogo: false,
+      modeBarButtonsToRemove: ["zoom2d", "pan2d", "select2d", "lasso2d", "zoomIn2d", "zoomOut2d", "autoScale2d", "resetScale2d"]
+    });
 
     if (typeof structureDiv.removeAllListeners === "function") {
       structureDiv.removeAllListeners("plotly_relayout");
@@ -365,6 +387,7 @@ async function draw() {
     xaxis: {
       title: "X-coordinate (cm)",
       range: X_RANGE,
+      fixedrange: true,
       tickmode: "linear",
       tick0: -5,
       dtick: 5,
@@ -374,6 +397,7 @@ async function draw() {
     yaxis: {
       title: "Y-coordinate (cm)",
       range: Y_RANGE,
+      fixedrange: true,
       tickmode: "linear",
       tick0: 5,
       dtick: 10,
@@ -384,7 +408,12 @@ async function draw() {
     },
     margin: {l: 80, r: 20, t: 20, b: 60},
     dragmode: "hover"
-  }, {responsive: true});
+  }, {
+    responsive: true,
+    scrollZoom: false,
+    displayModeBar: false,
+    doubleClick: false
+  });
 
   if (typeof plotDiv.removeAllListeners === "function") {
     plotDiv.removeAllListeners("plotly_hover");
