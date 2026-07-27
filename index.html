@@ -257,6 +257,68 @@ function meanStructureDamage(geometry, payload, area) {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
+function structuralOverlayShapes() {
+  const supportColor = "rgba(78, 112, 176, 0.82)";
+  const supportLine = "rgba(35, 62, 120, 0.95)";
+  return [
+    {
+      type: "rect",
+      xref: "x",
+      yref: "y",
+      x0: -55,
+      x1: 55,
+      y0: -4,
+      y1: 0,
+      line: {color: "rgba(0,0,0,0.85)", width: 1.2},
+      fillcolor: "rgba(0,0,0,0)"
+    },
+    {
+      type: "rect",
+      xref: "x",
+      yref: "y",
+      x0: -53.5,
+      x1: -49.0,
+      y0: 0.16,
+      y1: 0.55,
+      line: {color: supportLine, width: 1},
+      fillcolor: supportColor
+    },
+    {
+      type: "rect",
+      xref: "x",
+      yref: "y",
+      x0: 49.0,
+      x1: 53.5,
+      y0: 0.16,
+      y1: 0.55,
+      line: {color: supportLine, width: 1},
+      fillcolor: supportColor
+    },
+    {
+      type: "circle",
+      xref: "x",
+      yref: "y",
+      x0: -53.3,
+      x1: -50.7,
+      y0: -6.8,
+      y1: -4.2,
+      line: {color: supportLine, width: 1},
+      fillcolor: supportColor
+    },
+    {
+      type: "circle",
+      xref: "x",
+      yref: "y",
+      x0: 50.7,
+      x1: 53.3,
+      y0: -6.8,
+      y1: -4.2,
+      line: {color: supportLine, width: 1},
+      fillcolor: supportColor
+    }
+  ];
+}
+
 async function makeBlastMapForArea(chargeTag, xs, ys, area) {
   const geometry = await loadStructureGeometry();
   const z = ys.map(() => xs.map(() => null));
@@ -349,7 +411,7 @@ async function showStructureCase(chargeTag, xCm, yCm) {
       },
       yaxis: {
         title: "Depth z (cm)",
-        range: [-4, 0],
+        range: [-7.2, 0.8],
         showgrid: true,
         gridcolor: "rgba(0,0,0,0.12)",
         tickmode: "array",
@@ -362,7 +424,9 @@ async function showStructureCase(chargeTag, xCm, yCm) {
       margin: {l: 58, r: 70, t: 8, b: 42},
       dragmode: "drawrect",
       newshape: {line: {color: "#0072B2", width: 2}, fillcolor: "rgba(0,114,178,0.10)"},
-      shapes: selectedStructureArea ? [{
+      shapes: [
+        ...structuralOverlayShapes(),
+        ...(selectedStructureArea ? [{
         type: "rect",
         xref: "x",
         yref: "y",
@@ -372,7 +436,8 @@ async function showStructureCase(chargeTag, xCm, yCm) {
         y1: selectedStructureArea.y1,
         line: {color: "#0072B2", width: 2},
         fillcolor: "rgba(0,114,178,0.10)"
-      }] : []
+        }] : [])
+      ]
     }, {responsive: true});
 
     if (typeof structureDiv.removeAllListeners === "function") {
