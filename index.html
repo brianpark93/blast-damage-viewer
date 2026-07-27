@@ -10,12 +10,13 @@
     #controls { margin-bottom: 12px; }
     label { margin-right: 20px; }
     button { margin-left: 8px; }
-    #wrap { display: flex; gap: 20px; align-items: flex-start; }
-    #plot { width: 900px; height: 900px; }
-    #preview { width: 520px; position: sticky; top: 20px; }
+    #wrap { width: 900px; max-width: 100%; }
+    #plot { width: 900px; max-width: 100%; height: 900px; }
+    #preview { margin-top: 14px; }
     #previewTitle { font-weight: 700; margin-bottom: 10px; }
     #previewImg {
-      width: 100%;
+      width: 420px;
+      max-width: 100%;
       height: auto;
       border: 1px solid rgba(0,0,0,0.2);
       background: #f7f7f7;
@@ -38,7 +39,7 @@
     #areaSummary { margin-top: 8px; white-space: pre-line; }
     #structurePlot {
       width: 100%;
-      height: 280px;
+      height: 190px;
       margin-top: 10px;
       border: 1px solid rgba(0,0,0,0.14);
       background: #fff;
@@ -67,17 +68,17 @@
 <div id="wrap">
   <div id="plot"></div>
 
+  <div id="areaPanel">
+    <strong>Structural damage map / area of interest</strong>
+    <div id="areaHelp">Hover or click a detonation-location cell above, then draw a rectangle on the structural damage map below.</div>
+    <div id="structurePlot"></div>
+    <div id="areaSummary">No structural case loaded.</div>
+  </div>
+
   <div id="preview">
-    <div id="previewTitle">Hover a grid cell to preview</div>
+    <div id="previewTitle">Selected structural snapshot preview</div>
     <img id="previewImg" alt="snapshot preview" />
     <div id="previewMeta"></div>
-
-    <div id="areaPanel">
-      <strong>Area of interest</strong>
-      <div id="areaHelp">Hover a blast-location cell, then draw a rectangle on the structural damage plot below.</div>
-      <div id="structurePlot"></div>
-      <div id="areaSummary">No structural case loaded.</div>
-    </div>
   </div>
 </div>
 

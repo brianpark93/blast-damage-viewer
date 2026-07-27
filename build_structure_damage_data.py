@@ -9,14 +9,13 @@ from pathlib import Path
 VIEWER_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = VIEWER_DIR.parents[2]
 RESULT_ROOT = PROJECT_ROOT / "01_analysis_2dbeam_blast" / "251222_dawon_m0.1_to_m0.8_copy2"
+GEOMETRY_KEYWORD = PROJECT_ROOT / "05_revision" / "additional_analysis" / "basefolder" / "0main.k"
 OUTPUT_DIR = VIEWER_DIR / "data" / "structure_damage"
 
-COLS = 110
-ROWS = 4
-DUPLICATES_PER_CELL = 4
-RAW_VALUE_COUNT = COLS * ROWS * DUPLICATES_PER_CELL
-DY_CM = 1.0
-DZ_CM = 1.0
+COLS = 220
+ROWS = 8
+DY_CM = 0.5
+DZ_CM = 0.5
 Y0_CM = -55.0
 Z0_CM = -4.0
 
@@ -44,28 +43,55 @@ def parse_failed_elements(case_dir: Path) -> set[int]:
     return failed
 
 
-def collapse_to_structural_grid(values: list[float]) -> list[float]:
-    """Collapse exported damage histories to the real y-z concrete grid.
+def parse_keyword_geometry(keyword_path: Path) -> dict[int, tuple[float, float]]:
+    """Return exported solid-element centroid coordinates as (y_cm, z_cm)."""
+    nodes: dict[int, tuple[float, float, float]] = {}
+    element_nodes: dict[int, list[int]] = {}
+    mode = None
 
-    The base keyword geometry gives 110 real structural positions along the
-    beam and 4 depth layers. The damage-history export has 1760 values, i.e.,
-    four exported values per physical y-z cell. Eroded exported elements are
-    first corrected to d=1.0, then these duplicate values are averaged.
-    """
-    if len(values) != RAW_VALUE_COUNT:
-        raise ValueError(f"Expected {RAW_VALUE_COUNT} exported values, got {len(values)}")
+    with keyword_path.open(errors="ignore") as file:
+        for line in file:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("$"):
+                continue
+            if stripped.startswith("*"):
+                keyword = stripped.upper()
+                if keyword.startswith("*NODE"):
+                    mode = "node"
+                elif keyword.startswith("*ELEMENT_SOLID"):
+                    mode = "solid"
+                else:
+                    mode = None
+                continue
 
-    collapsed: list[float] = []
-    for z_index in range(ROWS):
-        for y_index in range(COLS):
-            source_y_index = COLS - 1 - y_index
-            base_index = z_index * DUPLICATES_PER_CELL * COLS + source_y_index
-            samples = [values[base_index + duplicate * COLS] for duplicate in range(DUPLICATES_PER_CELL)]
-            collapsed.append(sum(samples) / len(samples))
-    return collapsed
+            parts = stripped.split()
+            if mode == "node" and len(parts) >= 4:
+                try:
+                    nodes[int(parts[0])] = (float(parts[1]), float(parts[2]), float(parts[3]))
+                except ValueError:
+                    continue
+            elif mode == "solid" and len(parts) >= 10:
+                try:
+                    element_nodes[int(parts[0])] = [int(value) for value in parts[2:10]]
+                except ValueError:
+                    continue
+
+    centroids: dict[int, tuple[float, float]] = {}
+    for element_id, node_ids in element_nodes.items():
+        try:
+            points = [nodes[node_id] for node_id in node_ids]
+        except KeyError:
+            continue
+        y_cm = 100.0 * sum(point[1] for point in points) / len(points)
+        z_cm = 100.0 * sum(point[2] for point in points) / len(points)
+        centroids[element_id] = (round(y_cm, 6), round(z_cm, 6))
+    return centroids
 
 
-def parse_damage_history(case_dir: Path) -> tuple[list[float], int, float]:
+ELEMENT_CENTROIDS = parse_keyword_geometry(GEOMETRY_KEYWORD)
+
+
+def parse_damage_history(case_dir: Path) -> tuple[dict[int, float], int, float]:
     csv_path = case_dir / "damage_history_all_elements.csv"
     if not csv_path.exists():
         raise FileNotFoundError(csv_path)
@@ -102,7 +128,31 @@ def parse_damage_history(case_dir: Path) -> tuple[list[float], int, float]:
             failed_count += 1
 
     exported_mean_damage = sum(maxima) / len(maxima) if maxima else 0.0
-    return collapse_to_structural_grid(maxima), failed_count, exported_mean_damage
+    return dict(zip(element_ids, maxima)), failed_count, exported_mean_damage
+
+
+def map_damage_to_structural_grid(damage_by_element: dict[int, float]) -> list[float]:
+    values = [0.0] * (COLS * ROWS)
+
+    for element_id, damage in damage_by_element.items():
+        if element_id not in ELEMENT_CENTROIDS:
+            raise KeyError(f"Element {element_id} not found in {GEOMETRY_KEYWORD}")
+        y_cm, z_cm = ELEMENT_CENTROIDS[element_id]
+        y_index = round((y_cm - (Y0_CM + 0.5 * DY_CM)) / DY_CM)
+        z_index = round((z_cm - (Z0_CM + 0.5 * DZ_CM)) / DZ_CM)
+        y_snap = Y0_CM + (y_index + 0.5) * DY_CM
+        z_snap = Z0_CM + (z_index + 0.5) * DZ_CM
+        if (
+            y_index < 0
+            or y_index >= COLS
+            or z_index < 0
+            or z_index >= ROWS
+            or abs(y_cm - y_snap) > 1e-3
+            or abs(z_cm - z_snap) > 1e-3
+        ):
+            raise ValueError(f"Element {element_id} centroid ({y_cm}, {z_cm}) is outside the structural grid")
+        values[z_index * COLS + y_index] = damage
+    return values
 
 
 def write_geometry() -> None:
@@ -111,8 +161,8 @@ def write_geometry() -> None:
         "rows": ROWS,
         "y_centers_cm": [round(Y0_CM + (index + 0.5) * DY_CM, 3) for index in range(COLS)],
         "z_centers_cm": [round(Z0_CM + (index + 0.5) * DZ_CM, 3) for index in range(ROWS)],
-        "value_order": "row-major physical y-z grid: for each depth z row from bottom to top, structural y columns progress from left to right",
-        "averaging": "area-weighted over selected structural concrete cells; eroded exported elements are assigned d=1.0 before collapsing duplicate values",
+        "value_order": "row-major physical y-z grid from 0main.k centroids: for each depth z row from bottom to top, structural y columns progress from left to right",
+        "averaging": "area-weighted over selected structural concrete elements; eroded elements are assigned d=1.0",
     }
     (OUTPUT_DIR / "geometry.json").write_text(json.dumps(geometry, separators=(",", ":")), encoding="utf-8")
 
@@ -137,10 +187,11 @@ def main() -> None:
                 output_path = OUTPUT_DIR / output_name
 
                 try:
-                    values, failed_count, exported_mean_damage = parse_damage_history(case_dir)
+                    damage_by_element, failed_count, exported_mean_damage = parse_damage_history(case_dir)
                 except FileNotFoundError:
                     missing.append(str(case_dir))
                     continue
+                values = map_damage_to_structural_grid(damage_by_element)
 
                 if len(values) != COLS * ROWS:
                     raise ValueError(f"{case_dir} has {len(values)} cells, expected {COLS * ROWS}")
