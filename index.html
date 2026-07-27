@@ -15,7 +15,7 @@
     #preview { width: 900px; position: sticky; top: 20px; }
     #previewTitle { font-weight: 700; margin-bottom: 10px; }
     #previewImg {
-      width: 420px;
+      width: 900px;
       max-width: 100%;
       height: auto;
       border: 1px solid rgba(0,0,0,0.2);
@@ -40,7 +40,7 @@
     #structurePlot {
       width: 900px;
       max-width: 100%;
-      height: 140px;
+      height: 350px;
       margin-top: 10px;
       border: 1px solid rgba(0,0,0,0.14);
       background: #fff;
@@ -215,8 +215,13 @@ async function loadStructureDamage(chargeTag, xCm, yCm) {
 
 function makeStructureZ(geometry, payload) {
   return geometry.z_centers_cm.map((_, zi) =>
-    geometry.y_centers_cm.map((_, yi) => payload.values[yi * geometry.rows + zi])
+    geometry.y_centers_cm.map((_, yi) => structureValueAt(geometry, payload, yi, zi))
   );
+}
+
+function structureValueAt(geometry, payload, yi, zi) {
+  const sourceYi = geometry.cols - 1 - yi;
+  return payload.values[sourceYi * geometry.rows + zi];
 }
 
 function getStructureValues(geometry, payload, area) {
@@ -226,7 +231,7 @@ function getStructureValues(geometry, payload, area) {
       const y = geometry.y_centers_cm[yi];
       const z = geometry.z_centers_cm[zi];
       if (!area || (y >= area.x0 && y <= area.x1 && z >= area.y0 && z <= area.y1)) {
-        const value = payload.values[yi * geometry.rows + zi];
+        const value = structureValueAt(geometry, payload, yi, zi);
         if (Number.isFinite(value)) values.push(value);
       }
     }
@@ -308,13 +313,10 @@ async function showStructureCase(chargeTag, xCm, yCm) {
         title: "Depth z (cm)",
         range: [-4, 0],
         fixedrange: true,
-        scaleanchor: "x",
-        scaleratio: 1,
-        constrain: "domain",
         showgrid: true,
         gridcolor: "rgba(0,0,0,0.12)"
       },
-      margin: {l: 58, r: 12, t: 8, b: 36},
+      margin: {l: 58, r: 12, t: 8, b: 48},
       dragmode: "drawrect",
       newshape: {line: {color: "#0072B2", width: 2}, fillcolor: "rgba(0,114,178,0.10)"},
       shapes: selectedStructureArea ? [{
