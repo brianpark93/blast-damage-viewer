@@ -7,33 +7,19 @@
   <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; }
-
     #controls { margin-bottom: 12px; }
     label { margin-right: 20px; }
-
-    #wrap {
-      display: flex;
-      gap: 20px;
-      align-items: flex-start;
-    }
-
+    button { margin-left: 8px; }
+    #wrap { display: flex; gap: 20px; align-items: flex-start; }
     #plot { width: 900px; height: 900px; }
-
-    #preview {
-      width: 420px;
-      position: sticky;
-      top: 20px;
-    }
-
+    #preview { width: 520px; position: sticky; top: 20px; }
     #previewTitle { font-weight: 700; margin-bottom: 10px; }
-
     #previewImg {
       width: 100%;
       height: auto;
       border: 1px solid rgba(0,0,0,0.2);
       background: #f7f7f7;
     }
-
     #previewMeta {
       margin-top: 10px;
       font-size: 13px;
@@ -41,18 +27,22 @@
       white-space: pre-wrap;
       word-break: break-all;
     }
-
     #areaPanel {
       margin-top: 18px;
       padding: 12px;
       border: 1px solid rgba(0,0,0,0.18);
       background: #f7f7f7;
     }
-
     #areaPanel strong { display: block; margin-bottom: 6px; }
     #areaHelp, #areaSummary { font-size: 13px; line-height: 1.45; }
     #areaSummary { margin-top: 8px; white-space: pre-line; }
-    button { margin-left: 8px; }
+    #structurePlot {
+      width: 100%;
+      height: 280px;
+      margin-top: 10px;
+      border: 1px solid rgba(0,0,0,0.14);
+      background: #fff;
+    }
   </style>
 </head>
 <body>
@@ -71,7 +61,7 @@
     <span id="thrVal">0.50</span>
   </label>
 
-  <button id="clearArea" type="button" disabled>Clear selected area</button>
+  <button id="clearArea" type="button" disabled>Clear structural area</button>
 </div>
 
 <div id="wrap">
@@ -84,8 +74,9 @@
 
     <div id="areaPanel">
       <strong>Area of interest</strong>
-      <div id="areaHelp">Draw a rectangle on the map to focus the hazard assessment on an area of interest.</div>
-      <div id="areaSummary">No area selected. The full hazard map is displayed.</div>
+      <div id="areaHelp">Hover a blast-location cell, then draw a rectangle on the structural damage plot below.</div>
+      <div id="structurePlot"></div>
+      <div id="areaSummary">No structural case loaded.</div>
     </div>
   </div>
 </div>
@@ -95,66 +86,64 @@ const chargeSel = document.getElementById("charge");
 const thr = document.getElementById("thr");
 const thrVal = document.getElementById("thrVal");
 const plotDiv = document.getElementById("plot");
+const structureDiv = document.getElementById("structurePlot");
 const clearAreaBtn = document.getElementById("clearArea");
-
-const previewImg  = document.getElementById("previewImg");
+const previewImg = document.getElementById("previewImg");
 const previewMeta = document.getElementById("previewMeta");
 const areaSummary = document.getElementById("areaSummary");
 
-let selectedArea = null;
-
-// 축 범위 (cm)
 const X_RANGE = [-5, 50];
 const Y_RANGE = [5, 105];
-
-// 스냅샷 폴더 (index.html 기준 상대경로)
 const SNAP_DIR = "processed_damage_snapshots";
-
-// charges 목록 (파이썬에서 자동 생성)
 const files = ["m0p1", "m0p2", "m0p3", "m0p4", "m0p5", "m0p6", "m0p7", "m0p8", "m0p9", "m1p0"];
 
-// populate dropdown
-files.forEach(f => {
-  const opt = document.createElement("option");
-  opt.value = f;
-  opt.text = f.replace("m","").replace("p",".") + " kg";
-  chargeSel.appendChild(opt);
+let selectedStructureArea = null;
+let currentStructureCase = null;
+let structureGeometryPromise = null;
+const structureDamageCache = new Map();
+
+files.forEach(file => {
+  const option = document.createElement("option");
+  option.value = file;
+  option.text = file.replace("m", "").replace("p", ".") + " kg";
+  chargeSel.appendChild(option);
 });
 
-async function loadCSV(name) {
-  const r = await fetch(`data/${name}.csv`);
-  if (!r.ok) throw new Error(`Cannot load data/${name}.csv`);
-  const text = await r.text();
+function pad3(value) {
+  const rounded = String(Math.round(Number(value)));
+  return rounded.length >= 3 ? rounded : ("000" + rounded).slice(-3);
+}
 
+async function loadCSV(name) {
+  const response = await fetch(`data/${name}.csv`);
+  if (!response.ok) throw new Error(`Cannot load data/${name}.csv`);
+  const text = await response.text();
   const rows = text.trim().split(/\r?\n/);
   const head = rows[0].split(",");
   const ix = head.indexOf("x_cm");
   const iy = head.indexOf("y_cm");
   const id = head.indexOf("damage");
-  if (ix < 0 || iy < 0 || id < 0) {
-    throw new Error("CSV must have columns: x_cm,y_cm,damage");
-  }
+  if (ix < 0 || iy < 0 || id < 0) throw new Error("CSV must have columns: x_cm,y_cm,damage");
 
-  const data = rows.slice(1).map(r => r.split(",").map(Number));
-  const xs = [...new Set(data.map(r => r[ix]))].sort((a,b)=>a-b);
-  const ys = [...new Set(data.map(r => r[iy]))].sort((a,b)=>a-b);
-
+  const data = rows.slice(1).map(row => row.split(",").map(Number));
+  const xs = [...new Set(data.map(row => row[ix]))].sort((a, b) => a - b);
+  const ys = [...new Set(data.map(row => row[iy]))].sort((a, b) => a - b);
   const z = ys.map(() => xs.map(() => null));
-  data.forEach(r => {
-    const x = r[ix], y = r[iy], d = r[id];
-    if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(d)) {
-      const yi2 = ys.indexOf(y);
-      const xi2 = xs.indexOf(x);
-      if (yi2 >= 0 && xi2 >= 0) z[yi2][xi2] = d;
-    }
+
+  data.forEach(row => {
+    const x = row[ix], y = row[iy], damage = row[id];
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(damage)) return;
+    const xi = xs.indexOf(x);
+    const yi = ys.indexOf(y);
+    if (xi >= 0 && yi >= 0) z[yi][xi] = damage;
   });
 
   return {xs, ys, z};
 }
 
-function mask(z, t) {
+function mask(z, threshold) {
   return z.map(row =>
-    row.map(v => (v == null || Number.isNaN(v)) ? null : (v >= t ? 1 : 0))
+    row.map(value => (value == null || Number.isNaN(value)) ? null : (value >= threshold ? 1 : 0))
   );
 }
 
@@ -163,126 +152,214 @@ function normalizeArea(shape) {
   const x0 = Number(shape.x0), x1 = Number(shape.x1);
   const y0 = Number(shape.y0), y1 = Number(shape.y1);
   if (![x0, x1, y0, y1].every(Number.isFinite) || x0 === x1 || y0 === y1) return null;
-  return { x0: Math.min(x0, x1), x1: Math.max(x0, x1), y0: Math.min(y0, y1), y1: Math.max(y0, y1) };
+  return {
+    x0: Math.min(x0, x1),
+    x1: Math.max(x0, x1),
+    y0: Math.min(y0, y1),
+    y1: Math.max(y0, y1)
+  };
 }
 
-function filterToArea(xs, ys, z, area) {
-  if (!area) return z;
-  return z.map((row, yi) => row.map((value, xi) =>
-    xs[xi] >= area.x0 && xs[xi] <= area.x1 && ys[yi] >= area.y0 && ys[yi] <= area.y1 ? value : null
-  ));
+function buildSnapshotPath(chargeTag, xCm, yCm) {
+  const xi = Math.round(Number(xCm));
+  const yi = Math.round(Number(yCm));
+  if (!Number.isFinite(xi) || !Number.isFinite(yi) || xi < 0 || yi < 0) return null;
+  return `${SNAP_DIR}/damage_snapshot_${chargeTag}_x${pad3(xi)}_y${pad3(yi)}.png`;
 }
 
-function updateAreaSummary(xs, ys, z, area, threshold) {
-  if (!area) {
-    areaSummary.textContent = "No area selected. The full hazard map is displayed.";
-    clearAreaBtn.disabled = true;
+function setPreview(chargeTag, xCm, yCm) {
+  const path = buildSnapshotPath(chargeTag, xCm, yCm);
+  if (!path) {
+    previewImg.removeAttribute("src");
+    previewMeta.textContent = `No preview (invalid coord): m=${chargeTag}, x=${xCm}, y=${yCm}`;
     return;
   }
+  previewImg.src = `${path}?v=${Date.now()}`;
+  previewMeta.textContent =
+    `m=${chargeTag}\n` +
+    `x=${Number(xCm).toFixed(1)} cm, y=${Number(yCm).toFixed(1)} cm\n` +
+    `${path}`;
+}
 
+previewImg.onerror = () => {
+  const text = previewMeta.textContent || "";
+  previewMeta.textContent = text + "\n(Preview image not found)";
+  previewImg.removeAttribute("src");
+};
+
+function loadStructureGeometry() {
+  if (!structureGeometryPromise) {
+    structureGeometryPromise = fetch("data/structure_damage/geometry.json").then(response => {
+      if (!response.ok) throw new Error("Cannot load structural geometry");
+      return response.json();
+    });
+  }
+  return structureGeometryPromise;
+}
+
+function structureCasePath(chargeTag, xCm, yCm) {
+  return `data/structure_damage/${chargeTag}_x${pad3(xCm)}_y${pad3(yCm)}.json`;
+}
+
+async function loadStructureDamage(chargeTag, xCm, yCm) {
+  const path = structureCasePath(chargeTag, xCm, yCm);
+  if (structureDamageCache.has(path)) return structureDamageCache.get(path);
+  const response = await fetch(path);
+  if (!response.ok) throw new Error(`Cannot load ${path}`);
+  const payload = await response.json();
+  structureDamageCache.set(path, payload);
+  return payload;
+}
+
+function makeStructureZ(geometry, payload) {
+  return geometry.z_centers_cm.map((_, zi) =>
+    geometry.y_centers_cm.map((_, yi) => payload.values[yi * geometry.rows + zi])
+  );
+}
+
+function getStructureValues(geometry, payload, area) {
   const values = [];
-  z.forEach((row, yi) => row.forEach((value, xi) => {
-    if (value != null && xs[xi] >= area.x0 && xs[xi] <= area.x1 && ys[yi] >= area.y0 && ys[yi] <= area.y1) values.push(value);
-  }));
+  for (let yi = 0; yi < geometry.y_centers_cm.length; yi++) {
+    for (let zi = 0; zi < geometry.z_centers_cm.length; zi++) {
+      const y = geometry.y_centers_cm[yi];
+      const z = geometry.z_centers_cm[zi];
+      if (!area || (y >= area.x0 && y <= area.x1 && z >= area.y0 && z <= area.y1)) {
+        const value = payload.values[yi * geometry.rows + zi];
+        if (Number.isFinite(value)) values.push(value);
+      }
+    }
+  }
+  return values;
+}
+
+function summarizeValues(values, threshold) {
   const exceed = values.filter(value => value >= threshold).length;
   const mean = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : NaN;
   const maximum = values.length ? Math.max(...values) : NaN;
   const exceedPercent = values.length ? 100 * exceed / values.length : NaN;
-
-  areaSummary.textContent =
-    `Selected area: x = ${area.x0.toFixed(1)}--${area.x1.toFixed(1)} cm; y = ${area.y0.toFixed(1)}--${area.y1.toFixed(1)} cm\n` +
-    `Grid cells: ${values.length}\n` +
-    `Mean damage: ${Number.isFinite(mean) ? mean.toFixed(4) : "N/A"}\n` +
-    `Maximum damage: ${Number.isFinite(maximum) ? maximum.toFixed(4) : "N/A"}\n` +
-    `Damage >= ${threshold.toFixed(2)}: ${exceed}/${values.length} (${Number.isFinite(exceedPercent) ? exceedPercent.toFixed(1) : "N/A"}%)`;
-  clearAreaBtn.disabled = false;
+  return {exceed, mean, maximum, exceedPercent};
 }
 
-function pad3(n) {
-  const s = String(n);
-  return s.length >= 3 ? s : ("000" + s).slice(-3);
-}
-
-function buildSnapshotPath(chargeTag, x_cm, y_cm) {
-  const xi = Math.round(Number(x_cm));
-  const yi = Math.round(Number(y_cm));
-
-  if (!Number.isFinite(xi) || !Number.isFinite(yi) || xi < 0 || yi < 0) return null;
-
-  const xTag = pad3(xi);
-  const yTag = pad3(yi);
-
-  return `${SNAP_DIR}/damage_snapshot_${chargeTag}_x${xTag}_y${yTag}.png`;
-}
-
-function setPreview(chargeTag, x_cm, y_cm) {
-  const p = buildSnapshotPath(chargeTag, x_cm, y_cm);
-  if (!p) {
-    previewImg.removeAttribute("src");
-    previewMeta.textContent = `No preview (invalid coord): m=${chargeTag}, x=${x_cm}, y=${y_cm}`;
+function updateStructureSummary(geometry, payload, area, threshold) {
+  if (!geometry || !payload) {
+    areaSummary.textContent = "No structural case loaded.";
+    clearAreaBtn.disabled = true;
     return;
   }
 
-  previewImg.src = `${p}?v=${Date.now()}`;
-  previewMeta.textContent =
-    `m=${chargeTag}\n` +
-    `x=${Number(x_cm).toFixed(1)} cm, y=${Number(y_cm).toFixed(1)} cm\n` +
-    `${p}`;
+  const fullValues = getStructureValues(geometry, payload, null);
+  const fullSummary = summarizeValues(fullValues, threshold);
+  const selectedText = area ? (() => {
+    const values = getStructureValues(geometry, payload, area);
+    const summary = summarizeValues(values, threshold);
+    return `Selected structural area: y = ${area.x0.toFixed(1)}--${area.x1.toFixed(1)} cm; z = ${area.y0.toFixed(1)}--${area.y1.toFixed(1)} cm\n` +
+      `Selected elements: ${values.length}\n` +
+      `Selected mean damage: ${Number.isFinite(summary.mean) ? summary.mean.toFixed(4) : "N/A"}\n` +
+      `Selected maximum damage: ${Number.isFinite(summary.maximum) ? summary.maximum.toFixed(4) : "N/A"}\n` +
+      `Selected damage >= ${threshold.toFixed(2)}: ${summary.exceed}/${values.length} (${Number.isFinite(summary.exceedPercent) ? summary.exceedPercent.toFixed(1) : "N/A"}%)`;
+  })() : "No structural area selected. Draw a rectangle on the structural plot.";
+
+  areaSummary.textContent =
+    `Current blast case: m=${payload.charge}, x=${Number(payload.x_cm).toFixed(1)} cm, y=${Number(payload.y_cm).toFixed(1)} cm\n` +
+    `Full structural mean damage: ${Number.isFinite(fullSummary.mean) ? fullSummary.mean.toFixed(4) : "N/A"}\n` +
+    `Full damage >= ${threshold.toFixed(2)}: ${fullSummary.exceed}/${fullValues.length} (${Number.isFinite(fullSummary.exceedPercent) ? fullSummary.exceedPercent.toFixed(1) : "N/A"}%)\n` +
+    `Eroded elements corrected to d=1.0: ${payload.failed_elements}\n\n` +
+    selectedText;
+  clearAreaBtn.disabled = !area;
 }
 
-previewImg.onerror = () => {
-  const txt = previewMeta.textContent || "";
-  previewMeta.textContent = txt + "\n(Preview image not found)";
-  previewImg.removeAttribute("src");
-};
+async function showStructureCase(chargeTag, xCm, yCm) {
+  const requestKey = `${chargeTag}_${Math.round(Number(xCm))}_${Math.round(Number(yCm))}`;
+  currentStructureCase = requestKey;
+
+  try {
+    const [geometry, payload] = await Promise.all([
+      loadStructureGeometry(),
+      loadStructureDamage(chargeTag, xCm, yCm)
+    ]);
+    if (currentStructureCase !== requestKey) return;
+
+    updateStructureSummary(geometry, payload, selectedStructureArea, Number(thr.value));
+
+    await Plotly.react(structureDiv, [{
+      type: "heatmap",
+      x: geometry.y_centers_cm,
+      y: geometry.z_centers_cm,
+      z: makeStructureZ(geometry, payload),
+      zmin: 0,
+      zmax: 1,
+      colorscale: [[0, "rgb(255,255,255)"], [1, "rgb(0,0,0)"]],
+      colorbar: {title: "d", len: 0.8},
+      hovertemplate:
+        "structural y = %{x:.2f} cm<br>" +
+        "depth z = %{y:.2f} cm<br>" +
+        "d = %{z:.4f}<extra></extra>"
+    }], {
+      xaxis: {title: "Structural position y (cm)", range: [-55, 55], showgrid: true, gridcolor: "rgba(0,0,0,0.12)"},
+      yaxis: {title: "Depth z (cm)", range: [-4, 0], showgrid: true, gridcolor: "rgba(0,0,0,0.12)"},
+      margin: {l: 58, r: 12, t: 8, b: 48},
+      dragmode: "drawrect",
+      newshape: {line: {color: "#0072B2", width: 2}, fillcolor: "rgba(0,114,178,0.10)"},
+      shapes: selectedStructureArea ? [{
+        type: "rect",
+        xref: "x",
+        yref: "y",
+        x0: selectedStructureArea.x0,
+        x1: selectedStructureArea.x1,
+        y0: selectedStructureArea.y0,
+        y1: selectedStructureArea.y1,
+        line: {color: "#0072B2", width: 2},
+        fillcolor: "rgba(0,114,178,0.10)"
+      }] : []
+    }, {responsive: true});
+
+    if (typeof structureDiv.removeAllListeners === "function") {
+      structureDiv.removeAllListeners("plotly_relayout");
+    }
+    structureDiv.on("plotly_relayout", event => {
+      if (!event || !Object.keys(event).some(key => key.startsWith("shapes"))) return;
+      const shapes = structureDiv.layout.shapes || [];
+      const area = normalizeArea(shapes[shapes.length - 1]);
+      if (!area) return;
+      selectedStructureArea = area;
+      showStructureCase(chargeTag, xCm, yCm).catch(error => console.error(error));
+    });
+  } catch (error) {
+    areaSummary.textContent = `${error.message}\nStructural detail is unavailable for this blast case.`;
+    console.error(error);
+  }
+}
 
 async function draw() {
   thrVal.textContent = Number(thr.value).toFixed(2);
-
   const charge = chargeSel.value;
   const {xs, ys, z} = await loadCSV(charge);
-  const t = Number(thr.value);
-  const focusedZ = filterToArea(xs, ys, z, selectedArea);
-  const m = mask(focusedZ, t);
-  updateAreaSummary(xs, ys, z, selectedArea, t);
+  const threshold = Number(thr.value);
+  const thresholdMask = mask(z, threshold);
 
   await Plotly.newPlot(plotDiv, [
-    // base damage map (hover에서 d 표시)
     {
       type: "heatmap",
       x: xs,
       y: ys,
-      z: focusedZ,
-      colorscale: [
-        [0.0, "rgb(255,255,255)"],
-        [1.0, "rgb(0,0,0)"]
-      ],
+      z,
+      colorscale: [[0, "rgb(255,255,255)"], [1, "rgb(0,0,0)"]],
       zmin: 0,
       zmax: 1,
-      colorbar: { title: "Damage" },
-      hovertemplate:
-        "x = %{x} cm<br>" +
-        "y = %{y} cm<br>" +
-        "d = %{z:.4f}<extra></extra>"
+      colorbar: {title: "Damage"},
+      hovertemplate: "x = %{x} cm<br>y = %{y} cm<br>d = %{z:.4f}<extra></extra>"
     },
-    // overlay: threshold exceed = red, hover에서도 d 표시 (customdata 사용)
     {
       type: "heatmap",
       x: xs,
       y: ys,
-      z: m,
-      customdata: focusedZ,
+      z: thresholdMask,
+      customdata: z,
       showscale: false,
       zmin: 0,
       zmax: 1,
-      colorscale: [
-        [0.0, "rgba(0,0,0,0)"],
-        [1.0, "rgba(255,0,0,0.55)"]
-      ],
-      hovertemplate:
-        "x = %{x} cm<br>" +
-        "y = %{y} cm<br>" +
-        "d = %{customdata:.4f}<extra></extra>"
+      colorscale: [[0, "rgba(0,0,0,0)"], [1, "rgba(255,0,0,0.55)"]],
+      hovertemplate: "x = %{x} cm<br>y = %{y} cm<br>d = %{customdata:.4f}<extra></extra>"
     }
   ], {
     xaxis: {
@@ -305,59 +382,46 @@ async function draw() {
       scaleanchor: "x",
       scaleratio: 1
     },
-    margin: { l: 80, r: 20, t: 20, b: 60 },
-    dragmode: "drawrect",
-    newshape: {
-      line: { color: "#0072B2", width: 2 },
-      fillcolor: "rgba(0,114,178,0.10)"
-    },
-    shapes: selectedArea ? [{
-      type: "rect",
-      xref: "x",
-      yref: "y",
-      x0: selectedArea.x0,
-      x1: selectedArea.x1,
-      y0: selectedArea.y0,
-      y1: selectedArea.y1,
-      line: { color: "#0072B2", width: 2 },
-      fillcolor: "rgba(0,114,178,0.10)"
-    }] : []
+    margin: {l: 80, r: 20, t: 20, b: 60},
+    dragmode: "hover"
   }, {responsive: true});
 
   if (typeof plotDiv.removeAllListeners === "function") {
     plotDiv.removeAllListeners("plotly_hover");
     plotDiv.removeAllListeners("plotly_unhover");
-    plotDiv.removeAllListeners("plotly_relayout");
   }
 
-  plotDiv.on("plotly_hover", (ev) => {
-    if (!ev || !ev.points || ev.points.length === 0) return;
-    const pt = ev.points[0];
-    setPreview(chargeSel.value, pt.x, pt.y);
+  plotDiv.on("plotly_hover", event => {
+    if (!event || !event.points || event.points.length === 0) return;
+    const point = event.points[0];
+    setPreview(chargeSel.value, point.x, point.y);
+    showStructureCase(chargeSel.value, point.x, point.y).catch(error => console.error(error));
   });
-
   plotDiv.on("plotly_unhover", () => {});
-
-  plotDiv.on("plotly_relayout", (event) => {
-    if (!event || !Object.keys(event).some(key => key.startsWith("shapes"))) return;
-    const shapes = plotDiv.layout.shapes || [];
-    const latestShape = shapes[shapes.length - 1];
-    const area = normalizeArea(latestShape);
-    if (!area) return;
-    selectedArea = area;
-    draw().catch(e => console.error(e));
-  });
 }
 
-chargeSel.onchange = () => draw().catch(e => console.error(e));
-thr.oninput = () => draw().catch(e => console.error(e));
+chargeSel.onchange = () => {
+  selectedStructureArea = null;
+  currentStructureCase = null;
+  updateStructureSummary(null, null, null, Number(thr.value));
+  draw().catch(error => console.error(error));
+};
+thr.oninput = () => {
+  draw().catch(error => console.error(error));
+  if (currentStructureCase) {
+    const [, xText, yText] = currentStructureCase.split("_");
+    showStructureCase(chargeSel.value, Number(xText), Number(yText)).catch(error => console.error(error));
+  }
+};
 clearAreaBtn.onclick = () => {
-  selectedArea = null;
-  draw().catch(e => console.error(e));
+  selectedStructureArea = null;
+  if (!currentStructureCase) return;
+  const [, xText, yText] = currentStructureCase.split("_");
+  showStructureCase(chargeSel.value, Number(xText), Number(yText)).catch(error => console.error(error));
 };
 
 chargeSel.value = files[0] || "";
-draw().catch(e => console.error(e));
+draw().catch(error => console.error(error));
 </script>
 
 </body>
