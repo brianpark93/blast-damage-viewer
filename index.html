@@ -41,6 +41,18 @@
       white-space: pre-wrap;
       word-break: break-all;
     }
+
+    #areaPanel {
+      margin-top: 18px;
+      padding: 12px;
+      border: 1px solid rgba(0,0,0,0.18);
+      background: #f7f7f7;
+    }
+
+    #areaPanel strong { display: block; margin-bottom: 6px; }
+    #areaHelp, #areaSummary { font-size: 13px; line-height: 1.45; }
+    #areaSummary { margin-top: 8px; white-space: pre-line; }
+    button { margin-left: 8px; }
   </style>
 </head>
 <body>
@@ -58,6 +70,8 @@
     <input type="range" id="thr" min="0" max="1" step="0.01" value="0.50">
     <span id="thrVal">0.50</span>
   </label>
+
+  <button id="clearArea" type="button" disabled>Clear selected area</button>
 </div>
 
 <div id="wrap">
@@ -66,6 +80,13 @@
   <div id="preview">
     <div id="previewTitle">Hover a grid cell to preview</div>
     <img id="previewImg" alt="snapshot preview" />
+    <div id="previewMeta"></div>
+
+    <div id="areaPanel">
+      <strong>Area of interest</strong>
+      <div id="areaHelp">Draw a rectangle on the map to focus the hazard assessment on an area of interest.</div>
+      <div id="areaSummary">No area selected. The full hazard map is displayed.</div>
+    </div>
   </div>
 </div>
 
@@ -74,9 +95,13 @@ const chargeSel = document.getElementById("charge");
 const thr = document.getElementById("thr");
 const thrVal = document.getElementById("thrVal");
 const plotDiv = document.getElementById("plot");
+const clearAreaBtn = document.getElementById("clearArea");
 
 const previewImg  = document.getElementById("previewImg");
 const previewMeta = document.getElementById("previewMeta");
+const areaSummary = document.getElementById("areaSummary");
+
+let selectedArea = null;
 
 // 축 범위 (cm)
 const X_RANGE = [-5, 50];
@@ -133,6 +158,46 @@ function mask(z, t) {
   );
 }
 
+function normalizeArea(shape) {
+  if (!shape) return null;
+  const x0 = Number(shape.x0), x1 = Number(shape.x1);
+  const y0 = Number(shape.y0), y1 = Number(shape.y1);
+  if (![x0, x1, y0, y1].every(Number.isFinite) || x0 === x1 || y0 === y1) return null;
+  return { x0: Math.min(x0, x1), x1: Math.max(x0, x1), y0: Math.min(y0, y1), y1: Math.max(y0, y1) };
+}
+
+function filterToArea(xs, ys, z, area) {
+  if (!area) return z;
+  return z.map((row, yi) => row.map((value, xi) =>
+    xs[xi] >= area.x0 && xs[xi] <= area.x1 && ys[yi] >= area.y0 && ys[yi] <= area.y1 ? value : null
+  ));
+}
+
+function updateAreaSummary(xs, ys, z, area, threshold) {
+  if (!area) {
+    areaSummary.textContent = "No area selected. The full hazard map is displayed.";
+    clearAreaBtn.disabled = true;
+    return;
+  }
+
+  const values = [];
+  z.forEach((row, yi) => row.forEach((value, xi) => {
+    if (value != null && xs[xi] >= area.x0 && xs[xi] <= area.x1 && ys[yi] >= area.y0 && ys[yi] <= area.y1) values.push(value);
+  }));
+  const exceed = values.filter(value => value >= threshold).length;
+  const mean = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : NaN;
+  const maximum = values.length ? Math.max(...values) : NaN;
+  const exceedPercent = values.length ? 100 * exceed / values.length : NaN;
+
+  areaSummary.textContent =
+    `Selected area: x = ${area.x0.toFixed(1)}--${area.x1.toFixed(1)} cm; y = ${area.y0.toFixed(1)}--${area.y1.toFixed(1)} cm\n` +
+    `Grid cells: ${values.length}\n` +
+    `Mean damage: ${Number.isFinite(mean) ? mean.toFixed(4) : "N/A"}\n` +
+    `Maximum damage: ${Number.isFinite(maximum) ? maximum.toFixed(4) : "N/A"}\n` +
+    `Damage >= ${threshold.toFixed(2)}: ${exceed}/${values.length} (${Number.isFinite(exceedPercent) ? exceedPercent.toFixed(1) : "N/A"}%)`;
+  clearAreaBtn.disabled = false;
+}
+
 function pad3(n) {
   const s = String(n);
   return s.length >= 3 ? s : ("000" + s).slice(-3);
@@ -177,7 +242,9 @@ async function draw() {
   const charge = chargeSel.value;
   const {xs, ys, z} = await loadCSV(charge);
   const t = Number(thr.value);
-  const m = mask(z, t);
+  const focusedZ = filterToArea(xs, ys, z, selectedArea);
+  const m = mask(focusedZ, t);
+  updateAreaSummary(xs, ys, z, selectedArea, t);
 
   await Plotly.newPlot(plotDiv, [
     // base damage map (hover에서 d 표시)
@@ -185,7 +252,7 @@ async function draw() {
       type: "heatmap",
       x: xs,
       y: ys,
-      z: z,
+      z: focusedZ,
       colorscale: [
         [0.0, "rgb(255,255,255)"],
         [1.0, "rgb(0,0,0)"]
@@ -204,7 +271,7 @@ async function draw() {
       x: xs,
       y: ys,
       z: m,
-      customdata: z,   // ⭐ 실제 damage 값 전달
+      customdata: focusedZ,
       showscale: false,
       zmin: 0,
       zmax: 1,
@@ -238,12 +305,29 @@ async function draw() {
       scaleanchor: "x",
       scaleratio: 1
     },
-    margin: { l: 80, r: 20, t: 20, b: 60 }
+    margin: { l: 80, r: 20, t: 20, b: 60 },
+    dragmode: "drawrect",
+    newshape: {
+      line: { color: "#0072B2", width: 2 },
+      fillcolor: "rgba(0,114,178,0.10)"
+    },
+    shapes: selectedArea ? [{
+      type: "rect",
+      xref: "x",
+      yref: "y",
+      x0: selectedArea.x0,
+      x1: selectedArea.x1,
+      y0: selectedArea.y0,
+      y1: selectedArea.y1,
+      line: { color: "#0072B2", width: 2 },
+      fillcolor: "rgba(0,114,178,0.10)"
+    }] : []
   }, {responsive: true});
 
   if (typeof plotDiv.removeAllListeners === "function") {
     plotDiv.removeAllListeners("plotly_hover");
     plotDiv.removeAllListeners("plotly_unhover");
+    plotDiv.removeAllListeners("plotly_relayout");
   }
 
   plotDiv.on("plotly_hover", (ev) => {
@@ -253,10 +337,24 @@ async function draw() {
   });
 
   plotDiv.on("plotly_unhover", () => {});
+
+  plotDiv.on("plotly_relayout", (event) => {
+    if (!event || !Object.keys(event).some(key => key.startsWith("shapes"))) return;
+    const shapes = plotDiv.layout.shapes || [];
+    const latestShape = shapes[shapes.length - 1];
+    const area = normalizeArea(latestShape);
+    if (!area) return;
+    selectedArea = area;
+    draw().catch(e => console.error(e));
+  });
 }
 
 chargeSel.onchange = () => draw().catch(e => console.error(e));
 thr.oninput = () => draw().catch(e => console.error(e));
+clearAreaBtn.onclick = () => {
+  selectedArea = null;
+  draw().catch(e => console.error(e));
+};
 
 chargeSel.value = files[0] || "";
 draw().catch(e => console.error(e));
