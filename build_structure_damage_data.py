@@ -7,16 +7,16 @@ from pathlib import Path
 
 
 VIEWER_DIR = Path(__file__).resolve().parent
-RESULT_ROOT = Path(
-    r"D:\Dropbox_new\Dropbox\2_저널페이퍼\01_cscm_blast\05_dawon_2d_beam"
-    r"\01_analysis_2dbeam_blast\251222_dawon_m0.1_to_m0.8_copy2"
-)
+PROJECT_ROOT = VIEWER_DIR.parents[2]
+RESULT_ROOT = PROJECT_ROOT / "01_analysis_2dbeam_blast" / "251222_dawon_m0.1_to_m0.8_copy2"
 OUTPUT_DIR = VIEWER_DIR / "data" / "structure_damage"
 
-COLS = 220
-ROWS = 8
-DY_CM = 0.5
-DZ_CM = 0.5
+COLS = 110
+ROWS = 4
+DUPLICATES_PER_CELL = 4
+RAW_VALUE_COUNT = COLS * ROWS * DUPLICATES_PER_CELL
+DY_CM = 1.0
+DZ_CM = 1.0
 Y0_CM = -55.0
 Z0_CM = -4.0
 
@@ -44,7 +44,28 @@ def parse_failed_elements(case_dir: Path) -> set[int]:
     return failed
 
 
-def parse_damage_history(case_dir: Path) -> tuple[list[float], int]:
+def collapse_to_structural_grid(values: list[float]) -> list[float]:
+    """Collapse exported damage histories to the real y-z concrete grid.
+
+    The base keyword geometry gives 110 real structural positions along the
+    beam and 4 depth layers. The damage-history export has 1760 values, i.e.,
+    four exported values per physical y-z cell. Eroded exported elements are
+    first corrected to d=1.0, then these duplicate values are averaged.
+    """
+    if len(values) != RAW_VALUE_COUNT:
+        raise ValueError(f"Expected {RAW_VALUE_COUNT} exported values, got {len(values)}")
+
+    collapsed: list[float] = []
+    for z_index in range(ROWS):
+        for y_index in range(COLS):
+            source_y_index = COLS - 1 - y_index
+            base_index = z_index * DUPLICATES_PER_CELL * COLS + source_y_index
+            samples = [values[base_index + duplicate * COLS] for duplicate in range(DUPLICATES_PER_CELL)]
+            collapsed.append(sum(samples) / len(samples))
+    return collapsed
+
+
+def parse_damage_history(case_dir: Path) -> tuple[list[float], int, float]:
     csv_path = case_dir / "damage_history_all_elements.csv"
     if not csv_path.exists():
         raise FileNotFoundError(csv_path)
@@ -80,7 +101,8 @@ def parse_damage_history(case_dir: Path) -> tuple[list[float], int]:
             maxima[index] = 1.0
             failed_count += 1
 
-    return maxima, failed_count
+    exported_mean_damage = sum(maxima) / len(maxima) if maxima else 0.0
+    return collapse_to_structural_grid(maxima), failed_count, exported_mean_damage
 
 
 def write_geometry() -> None:
@@ -89,8 +111,8 @@ def write_geometry() -> None:
         "rows": ROWS,
         "y_centers_cm": [round(Y0_CM + (index + 0.5) * DY_CM, 3) for index in range(COLS)],
         "z_centers_cm": [round(Z0_CM + (index + 0.5) * DZ_CM, 3) for index in range(ROWS)],
-        "value_order": "for each y column, z rows progress from bottom to top",
-        "averaging": "area-weighted over selected structural concrete elements; eroded elements are assigned d=1.0",
+        "value_order": "row-major physical y-z grid: for each depth z row from bottom to top, structural y columns progress from left to right",
+        "averaging": "area-weighted over selected structural concrete cells; eroded exported elements are assigned d=1.0 before collapsing duplicate values",
     }
     (OUTPUT_DIR / "geometry.json").write_text(json.dumps(geometry, separators=(",", ":")), encoding="utf-8")
 
@@ -115,19 +137,20 @@ def main() -> None:
                 output_path = OUTPUT_DIR / output_name
 
                 try:
-                    values, failed_count = parse_damage_history(case_dir)
+                    values, failed_count, exported_mean_damage = parse_damage_history(case_dir)
                 except FileNotFoundError:
                     missing.append(str(case_dir))
                     continue
 
                 if len(values) != COLS * ROWS:
-                    raise ValueError(f"{case_dir} has {len(values)} elements, expected {COLS * ROWS}")
+                    raise ValueError(f"{case_dir} has {len(values)} cells, expected {COLS * ROWS}")
 
                 payload = {
                     "charge": charge_tag,
                     "x_cm": x_cm,
                     "y_cm": y_cm,
                     "failed_elements": failed_count,
+                    "exported_mean_damage": round(exported_mean_damage, 12),
                     "values": [round(value, 6) for value in values],
                 }
                 output_path.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
