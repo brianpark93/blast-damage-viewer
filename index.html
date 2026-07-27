@@ -11,8 +11,8 @@
     label { margin-right: 20px; }
     button { margin-left: 8px; }
     #wrap { display: flex; gap: 20px; align-items: flex-start; }
-    #plot { width: 900px; height: 900px; flex: 0 0 auto; }
-    #sidePanel { width: 900px; max-width: calc(100vw - 960px); min-width: 520px; position: sticky; top: 20px; }
+    #plot { width: 620px; height: 820px; flex: 0 0 auto; }
+    #sidePanel { width: 900px; max-width: calc(100vw - 680px); min-width: 520px; position: sticky; top: 20px; }
     #preview { margin-top: 0; }
     #previewTitle { font-weight: 700; margin-bottom: 10px; }
     #previewImg {
@@ -69,6 +69,7 @@
   </label>
 
   <button id="clearArea" type="button" disabled>Clear structural area</button>
+  <span id="mapMode">Left map: full structural mean</span>
 </div>
 
 <div id="wrap">
@@ -100,6 +101,7 @@ const clearAreaBtn = document.getElementById("clearArea");
 const previewImg = document.getElementById("previewImg");
 const previewMeta = document.getElementById("previewMeta");
 const areaSummary = document.getElementById("areaSummary");
+const mapMode = document.getElementById("mapMode");
 
 const X_RANGE = [-5, 50];
 const Y_RANGE = [5, 105];
@@ -110,6 +112,7 @@ let selectedStructureArea = null;
 let currentStructureCase = null;
 let structureGeometryPromise = null;
 const structureDamageCache = new Map();
+const blastCsvCache = new Map();
 
 files.forEach(file => {
   const option = document.createElement("option");
@@ -124,6 +127,7 @@ function pad3(value) {
 }
 
 async function loadCSV(name) {
+  if (blastCsvCache.has(name)) return blastCsvCache.get(name);
   const response = await fetch(`data/${name}.csv`);
   if (!response.ok) throw new Error(`Cannot load data/${name}.csv`);
   const text = await response.text();
@@ -147,7 +151,9 @@ async function loadCSV(name) {
     if (xi >= 0 && yi >= 0) z[yi][xi] = damage;
   });
 
-  return {xs, ys, z};
+  const result = {xs, ys, z};
+  blastCsvCache.set(name, result);
+  return result;
 }
 
 function mask(z, threshold) {
@@ -245,6 +251,36 @@ function getStructureValues(geometry, payload, area) {
   return values;
 }
 
+function meanStructureDamage(geometry, payload, area) {
+  const values = getStructureValues(geometry, payload, area);
+  if (!values.length) return null;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+async function makeBlastMapForArea(chargeTag, xs, ys, area) {
+  const geometry = await loadStructureGeometry();
+  const z = ys.map(() => xs.map(() => null));
+  const tasks = [];
+
+  ys.forEach((y, yi) => {
+    xs.forEach((x, xi) => {
+      tasks.push(
+        loadStructureDamage(chargeTag, x, y)
+          .then(payload => {
+            z[yi][xi] = meanStructureDamage(geometry, payload, area);
+          })
+          .catch(error => {
+            console.warn(`Cannot calculate AOI damage for ${chargeTag} x=${x} y=${y}`, error);
+            z[yi][xi] = null;
+          })
+      );
+    });
+  });
+
+  await Promise.all(tasks);
+  return z;
+}
+
 function summarizeValues(values, threshold) {
   const exceed = values.filter(value => value >= threshold).length;
   const mean = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : NaN;
@@ -303,10 +339,7 @@ async function showStructureCase(chargeTag, xCm, yCm) {
       zmax: 1,
       colorscale: [[0, "rgb(255,255,255)"], [1, "rgb(0,0,0)"]],
       colorbar: {title: "d", len: 0.8},
-      hovertemplate:
-        "structural y = %{x:.2f} cm<br>" +
-        "depth z = %{y:.2f} cm<br>" +
-        "d = %{z:.4f}<extra></extra>"
+      hoverinfo: "skip"
     }], {
       xaxis: {
         title: "Structural position y (cm)",
@@ -350,7 +383,10 @@ async function showStructureCase(chargeTag, xCm, yCm) {
       const area = normalizeArea(shapes[shapes.length - 1]);
       if (!area) return;
       selectedStructureArea = area;
-      showStructureCase(chargeTag, xCm, yCm).catch(error => console.error(error));
+      Promise.all([
+        draw(),
+        showStructureCase(chargeTag, xCm, yCm)
+      ]).catch(error => console.error(error));
     });
   } catch (error) {
     areaSummary.textContent = `${error.message}\nStructural detail is unavailable for this blast case.`;
@@ -361,7 +397,18 @@ async function showStructureCase(chargeTag, xCm, yCm) {
 async function draw() {
   thrVal.textContent = Number(thr.value).toFixed(2);
   const charge = chargeSel.value;
-  const {xs, ys, z} = await loadCSV(charge);
+  const {xs, ys, z: fullZ} = await loadCSV(charge);
+  mapMode.textContent = selectedStructureArea
+    ? "Left map: calculating selected structural area..."
+    : "Left map: full structural mean";
+  const z = selectedStructureArea
+    ? await makeBlastMapForArea(charge, xs, ys, selectedStructureArea)
+    : fullZ;
+  if (selectedStructureArea) {
+    mapMode.textContent =
+      `Left map: selected structural area y=${selectedStructureArea.x0.toFixed(1)}--${selectedStructureArea.x1.toFixed(1)} cm, ` +
+      `z=${selectedStructureArea.y0.toFixed(1)}--${selectedStructureArea.y1.toFixed(1)} cm`;
+  }
   const threshold = Number(thr.value);
   const thresholdMask = mask(z, threshold);
 
@@ -375,7 +422,10 @@ async function draw() {
       zmin: 0,
       zmax: 1,
       colorbar: {title: "Damage"},
-      hovertemplate: "x = %{x} cm<br>y = %{y} cm<br>d = %{z:.4f}<extra></extra>"
+      hovertemplate:
+        "x = %{x} cm<br>y = %{y} cm<br>" +
+        (selectedStructureArea ? "AOI mean d" : "full mean d") +
+        " = %{z:.4f}<extra></extra>"
     },
     {
       type: "heatmap",
@@ -387,7 +437,10 @@ async function draw() {
       zmin: 0,
       zmax: 1,
       colorscale: [[0, "rgba(0,0,0,0)"], [1, "rgba(255,0,0,0.55)"]],
-      hovertemplate: "x = %{x} cm<br>y = %{y} cm<br>d = %{customdata:.4f}<extra></extra>"
+      hovertemplate:
+        "x = %{x} cm<br>y = %{y} cm<br>" +
+        (selectedStructureArea ? "AOI mean d" : "full mean d") +
+        " = %{customdata:.4f}<extra></extra>"
     }
   ], {
     xaxis: {
@@ -443,6 +496,7 @@ thr.oninput = () => {
 };
 clearAreaBtn.onclick = () => {
   selectedStructureArea = null;
+  draw().catch(error => console.error(error));
   if (!currentStructureCase) return;
   const [, xText, yText] = currentStructureCase.split("_");
   showStructureCase(chargeSel.value, Number(xText), Number(yText)).catch(error => console.error(error));
