@@ -40,7 +40,7 @@
     #areaSummary { margin-top: 8px; white-space: pre-line; }
     #structurePlot {
       width: 100%;
-      height: 150px;
+      height: 240px;
       margin-top: 10px;
       border: 1px solid rgba(0,0,0,0.14);
       background: #fff;
@@ -276,10 +276,10 @@ function structuralOverlayShapes() {
       type: "rect",
       xref: "x",
       yref: "y",
-      x0: -53.5,
-      x1: -49.0,
-      y0: 0.16,
-      y1: 0.55,
+      x0: -55,
+      x1: -45,
+      y0: 0,
+      y1: 3,
       line: {color: supportLine, width: 1},
       fillcolor: supportColor
     },
@@ -287,10 +287,10 @@ function structuralOverlayShapes() {
       type: "rect",
       xref: "x",
       yref: "y",
-      x0: 49.0,
-      x1: 53.5,
-      y0: 0.16,
-      y1: 0.55,
+      x0: 45,
+      x1: 55,
+      y0: 0,
+      y1: 3,
       line: {color: supportLine, width: 1},
       fillcolor: supportColor
     },
@@ -298,10 +298,10 @@ function structuralOverlayShapes() {
       type: "circle",
       xref: "x",
       yref: "y",
-      x0: -53.3,
-      x1: -50.7,
-      y0: -6.8,
-      y1: -4.2,
+      x0: -55,
+      x1: -45,
+      y0: -14,
+      y1: -4,
       line: {color: supportLine, width: 1},
       fillcolor: supportColor
     },
@@ -309,10 +309,10 @@ function structuralOverlayShapes() {
       type: "circle",
       xref: "x",
       yref: "y",
-      x0: 50.7,
-      x1: 53.3,
-      y0: -6.8,
-      y1: -4.2,
+      x0: 45,
+      x1: 55,
+      y0: -14,
+      y1: -4,
       line: {color: supportLine, width: 1},
       fillcolor: supportColor
     }
@@ -411,11 +411,11 @@ async function showStructureCase(chargeTag, xCm, yCm) {
       },
       yaxis: {
         title: "Depth z (cm)",
-        range: [-7.2, 0.8],
+        range: [-14.5, 3.5],
         showgrid: true,
         gridcolor: "rgba(0,0,0,0.12)",
         tickmode: "array",
-        tickvals: [-4, -2, 0],
+        tickvals: [-14, -9, -4, 0, 3],
         fixedrange: true,
         scaleanchor: "x",
         scaleratio: 1,
