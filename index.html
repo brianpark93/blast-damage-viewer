@@ -363,7 +363,7 @@ function updateStructureSummary(geometry, payload, area, threshold) {
   const selectedText = area ? (() => {
     const values = getStructureValues(geometry, payload, area);
     const summary = summarizeValues(values, threshold);
-    return `Selected structural area: y = ${area.x0.toFixed(1)}--${area.x1.toFixed(1)} cm; z = ${area.y0.toFixed(1)}--${area.y1.toFixed(1)} cm\n` +
+    return `Selected structural area: x = ${area.x0.toFixed(1)}--${area.x1.toFixed(1)} cm; y = ${area.y0.toFixed(1)}--${area.y1.toFixed(1)} cm\n` +
       `Selected elements: ${values.length}\n` +
       `Selected mean damage: ${Number.isFinite(summary.mean) ? summary.mean.toFixed(4) : "N/A"}\n` +
       `Selected maximum damage: ${Number.isFinite(summary.maximum) ? summary.maximum.toFixed(4) : "N/A"}\n` +
@@ -403,14 +403,14 @@ async function showStructureCase(chargeTag, xCm, yCm) {
       hoverinfo: "skip"
     }], {
       xaxis: {
-        title: "Structural position y (cm)",
+        title: "Structural position x (cm)",
         range: [-55, 55],
         showgrid: true,
         gridcolor: "rgba(0,0,0,0.12)",
         fixedrange: true
       },
       yaxis: {
-        title: "Depth z (cm)",
+        title: "Depth y (cm)",
         range: [-14.5, 3.5],
         showgrid: true,
         gridcolor: "rgba(0,0,0,0.12)",
@@ -472,8 +472,8 @@ async function draw() {
     : fullZ;
   if (selectedStructureArea) {
     mapMode.textContent =
-      `Left map: selected structural area y=${selectedStructureArea.x0.toFixed(1)}--${selectedStructureArea.x1.toFixed(1)} cm, ` +
-      `z=${selectedStructureArea.y0.toFixed(1)}--${selectedStructureArea.y1.toFixed(1)} cm`;
+      `Left map: selected structural area x=${selectedStructureArea.x0.toFixed(1)}--${selectedStructureArea.x1.toFixed(1)} cm, ` +
+      `y=${selectedStructureArea.y0.toFixed(1)}--${selectedStructureArea.y1.toFixed(1)} cm`;
   }
   const threshold = Number(thr.value);
   const thresholdMask = mask(z, threshold);
